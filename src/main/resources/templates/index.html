@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Group Chat</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.1.4/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: #141414;
+            color: white;
+            overflow-x: hidden;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 50px 0;
+        }
+
+        .header {
+            text-align: center;
+            font-size: 3rem;
+            font-weight: bold;
+            color: #e50914;
+            margin-bottom: 30px;
+        }
+
+        .group-list, .message-box {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0;
+        }
+
+        .group-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 10px;
+            transition: transform 0.3s;
+            cursor: pointer;
+        }
+
+        .group-list li:hover {
+            transform: scale(1.05);
+        }
+
+        .group-list li span {
+            font-size: 1.2rem;
+        }
+
+        .group-list li button {
+            background-color: #e50914;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .group-list li button:hover {
+            background-color: #b20710;
+        }
+
+        #groupChat {
+            display: none;
+            width: 100%;
+            max-width: 800px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        }
+
+        .message-box {
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .message-box li {
+            background: #333;
+            margin-bottom: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .message-box li span {
+            color: #e50914;
+            font-weight: bold;
+        }
+
+        .input-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+
+        .input-container input {
+            width: 80%;
+            padding: 10px;
+            border: none;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        .input-container button {
+            width: 18%;
+            padding: 10px;
+            background: #e50914;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .input-container button:hover {
+            background: #b20710;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        WebSocket Group Chat
+    </div>
+
+    <div id="usernameSection">
+        <label for="username">Enter your Username:</label>
+        <input type="text" id="username" placeholder="Enter your Username">
+        <button onclick="setUsername()">Set Username</button>
+    </div>
+
+    <div>
+        <label for="groupName">Enter Group Name:</label>
+        <input type="text" id="groupName" placeholder="Enter Group Name">
+        <button onclick="joinGroup()">Join Group</button>
+    </div>
+
+    <ul class="group-list" id="groupList">
+        <!-- Group list will be populated here -->
+    </ul>
+
+    <div id="groupChat">
+        <div class="header">
+            Chat Room: <span id="currentGroupName"></span>
+        </div>
+        <ul class="message-box" id="messages"></ul>
+        <div class="input-container">
+            <input type="text" id="message" placeholder="Type a message...">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let socket = null;
+    let currentGroup = "";
+    let stompClient = null;
+
+
+    let username = "";
+
+    function setUsername() {
+        username = document.getElementById('username').value.trim();
+        if (username) {
+            document.getElementById('usernameSection').style.display = 'none'; // Hide username input
+            document.getElementById('groupSection').style.display = 'block';
+        }
+    }
+
+    function connectWebSocket(group) {
+        const socket = new SockJS('http://localhost:8080/websocket');
+        stompClient = Stomp.over(socket);
+
+        stompClient.connect({}, () => {
+            console.log('Connected to WebSocket');
+            stompClient.subscribe(`/topic/groups/${group}`, (message) => {
+                console.log(`Message received: ${message.body}`);
+                const messagesDiv = document.getElementById('messages');
+                const messageBody = JSON.parse(message.body);
+
+                const messageContent = messageBody.data || {};
+                const sender = messageContent.sender || 'Unknown';
+                const content = messageContent.content || 'No Content';
+
+                const displayName = sender === username ? 'You' : sender;
+                if (messageContent.sender !== username)
+                    messagesDiv.innerHTML += `<li><span>${displayName}:</span> ${content}</li>`;
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            });
+        }, (error) => {
+            console.error('WebSocket connection error:', error);
+        });
+    }
+
+    function sendMessage() {
+        const message = document.getElementById('message').value.trim();
+        if (message && stompClient) {
+            stompClient.send(`/app/sendMessage/${currentGroup}`, {}, JSON.stringify({
+                sender: username,
+                content: message
+            }));
+            document.getElementById('messages').innerHTML += `<li><span>You:</span> ${message}</li>`;
+            document.getElementById('message').value = '';
+            document.getElementById('messages').scrollTop = document.getElementById('messages').scrollHeight;
+        }
+    }
+
+    function joinGroup() {
+        const groupName = document.getElementById('groupName').value.trim();
+        if (groupName) {
+            currentGroup = groupName;
+            document.getElementById('currentGroupName').textContent = groupName;
+            document.getElementById('groupChat').style.display = 'block';
+            connectWebSocket(groupName);
+            addGroupToList(groupName);
+            document.getElementById('groupName').value = '';
+        }
+    }
+
+    function addGroupToList(groupName) {
+        const groupList = document.getElementById('groupList');
+        const li = document.createElement('li');
+        li.textContent = `Group: ${groupName}`;
+        li.onclick = () => joinGroup(groupName);
+        groupList.appendChild(li);
+    }
+
+    window.onload = () => {
+        addGroupToList('General');
+    };
+</script>
+</body>
+</html>

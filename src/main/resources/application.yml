@@ -1,0 +1,17 @@
+spring:
+  application:
+    name: groupchat
+  data:
+    mongodb:
+      database: chatapplication
+      host: localhost
+      port: 27017
+#      username:
+#      password:
+server:
+  port: 8080
+
+logging:
+  level:
+    root: DEBUG
+
